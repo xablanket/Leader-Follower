@@ -1,0 +1,132 @@
+#include "Encoders.h"
+#include "Motors.h"
+#include "PID.h"
+#include "Kinematics.h"
+#include "LineSensors.h"
+#define EMIT_PIN 11
+Motors_c motors;
+Kinematics_c kin;
+PID_c left_pid;
+PID_c right_pid;
+
+// LineSensors_c line_sensors;
+
+// ===== Constants you tuned =====
+#define DRIVE_EST_MS 20UL
+#define DRIVE_PID_MS 40UL
+#define DRIVE_PWM_LIMIT 60
+
+const float DEMAND_CS = -300.0f;
+const int kF_L = 16;
+const int kF_R = 15;
+
+float KP_L = 0.04400f, KI_L = 0.00000f, KD_L = 0.0f;  //左为右 右为左
+float KP_R = 0.07000f, KI_R = 0.00000f, KD_R = 0.0f;
+
+// ===== Runtime vars =====
+unsigned long drive_est_ts = 0, drive_pid_ts = 0;
+long d_last_e0 = 0, d_last_e1 = 0;
+float spdL_cps = 0.0f, spdR_cps = 0.0f;
+float d_mL1 = 0, d_mL2 = 0, d_mR1 = 0, d_mR2 = 0;
+
+float x0 = 0, y0 = 0;  // 起点记录
+bool started = false;
+
+static inline float clampf(float v, float lo, float hi) {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
+}
+
+static inline int iround(float v) {
+  return (int)lroundf(v);
+}
+
+void setup() {
+  Serial.begin(115200);
+  motors.initialise();
+  setupEncoder0();
+  setupEncoder1();
+  delay(300);
+
+  // ===== 初始朝向：沿 x 轴正方向 =====
+  kin.initialise(0, 0, 0);  // θ = 0 → 朝 +X 方向
+
+  ////////////////
+  pinMode(EMIT_PIN, OUTPUT);
+  digitalWrite(EMIT_PIN, LOW);
+  ////////////////
+
+  left_pid.initialise(KP_L, KI_L, KD_L);
+  right_pid.initialise(KP_R, KI_R, KD_R);
+  left_pid.reset();
+  right_pid.reset();
+
+  drive_est_ts = drive_pid_ts = millis();
+
+  x0 = kin.x;  // 起点
+  y0 = kin.y;
+  started = true;
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  // ===== ESTIMATION =====
+  if (now - drive_est_ts >= DRIVE_EST_MS) {
+    unsigned long dt = now - drive_est_ts;
+    drive_est_ts = now;
+
+    long e0 = count_e0, e1 = count_e1;
+    long d0 = e0 - d_last_e0;
+    long d1 = e1 - d_last_e1;
+    d_last_e0 = e0;
+    d_last_e1 = e1;
+
+    spdR_cps = (float)d0 / ((float)dt / 1000.0f);
+    spdL_cps = (float)d1 / ((float)dt / 1000.0f);
+
+    // ===== 更新里程计 =====
+    kin.update();
+  }
+
+  // ==== 计算走了多远 ====
+  float dx = kin.x - x0;
+  float dy = kin.y - y0;
+  float dist = sqrt(dx * dx + dy * dy);
+
+  // === 如果走了 >= 100 mm，则直接停止 ===
+  if (dist >= 450.0f) {
+    motors.setPWM(0, 0);
+    while (1)
+      ;  // 停机
+  }
+
+  // ===== PID CONTROL =====
+  if (now - drive_pid_ts >= DRIVE_PID_MS) {
+    drive_pid_ts = now;
+
+    float demand = DEMAND_CS;  // = -300（你现在系统的“前进”）
+
+    float measL = (spdL_cps + d_mL1 + d_mL2) / 3.0f;
+    float measR = (spdR_cps + d_mR1 + d_mR2) / 3.0f;
+
+    d_mL2 = d_mL1;
+    d_mL1 = spdL_cps;
+    d_mR2 = d_mR1;
+    d_mR1 = spdR_cps;
+
+    float uL = left_pid.update(demand, measL);
+    float uR = right_pid.update(demand, measR);
+
+    float uLc = clampf(uL, -12.0f, 12.0f);
+    float uRc = clampf(uR, -12.0f, 12.0f);
+
+    float sgn = (demand >= 0.0f) ? 1.0f : -1.0f;
+
+    float pwmL = clampf(sgn * kF_L + uLc, -DRIVE_PWM_LIMIT, DRIVE_PWM_LIMIT);
+    float pwmR = clampf(sgn * kF_R + uRc, -DRIVE_PWM_LIMIT, DRIVE_PWM_LIMIT);
+
+    motors.setPWM(iround(pwmL), iround(pwmR));
+  }
+}
