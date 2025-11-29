@@ -41,9 +41,9 @@ const float KP_R = 0.07000f;
 const float KI_R = 0.00005f;
 const float KD_R = 0.0f;
 
-const float kF_L = 16.0f;
-const float kF_R = 10.0f;
-const float PWM_MAX = 120.0f;
+const float kF_L = 13.5f;
+const float kF_R = 13.0f;
+const float PWM_MAX = 60.0f;
 
 unsigned long readBump(int pin) {
   pinMode(pin, OUTPUT);
