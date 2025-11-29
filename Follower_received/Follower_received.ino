@@ -141,7 +141,9 @@ void loop() {
 
     if (bump_window) {
       Serial.println("=== BUMP WINDOW ===");
-      unsigned long raw = readBump(BUMP_L);
+      unsigned long rawL = readBump(BUMP_L);
+      unsigned long rawR = readBump(BUMP_R);
+      unsigned long raw = (rawL + rawR) / 2;
       long diff = (long)bump_base - (long)raw;
       if (diff < 0) diff = 0;
       Serial.print("B_raw:");
