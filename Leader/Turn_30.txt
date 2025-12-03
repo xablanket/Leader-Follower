@@ -1,0 +1,161 @@
+#include "Encoders.h"
+#include "Motors.h"
+#include "PID.h"
+#include "Kinematics.h"
+#include "LineSensors.h"
+#define EMIT_PIN 11
+Motors_c motors;
+Kinematics_c kin;
+PID_c left_pid;
+PID_c right_pid;
+// LineSensors_c line_sensors;
+
+#define DRIVE_EST_MS 20UL
+#define DRIVE_PID_MS 40UL
+#define DRIVE_PWM_LIMIT 60
+
+const float DEMAND_CS = -300.0f;   // 反向逻辑 = 前进
+const int   kF_L      = 16;
+const int   kF_R      = 15;
+
+float KP_L = 0.04080f, KI_L = 0.0f, KD_L = 0.0f;   // KP_L = 右轮
+float KP_R = 0.07000f, KI_R = 0.0f, KD_R = 0.0f;   // KP_R = 左轮
+
+unsigned long drive_est_ts = 0, drive_pid_ts = 0;
+long d_last_e0 = 0, d_last_e1 = 0;
+float spdL_cps = 0.0f, spdR_cps = 0.0f;
+float d_mL1 = 0, d_mL2 = 0, d_mR1 = 0, d_mR2 = 0;
+
+float theta0 = 0.0f;
+float stage = 0;
+
+static inline float clampf(float v, float lo, float hi) {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
+}
+
+static inline int iround(float v) {
+  return (int)lroundf(v);
+}
+
+static inline float wrapPi(float a) {
+  while (a > M_PI) a -= 2.0f * M_PI;
+  while (a <= -M_PI) a += 2.0f * M_PI;
+  return a;
+}
+
+void setup() {
+  Serial.begin(115200);
+  motors.initialise();
+  setupEncoder0();
+  setupEncoder1();
+  delay(300);
+
+  kin.initialise(0.0f, 0.0f, 0.0f);
+  theta0 = kin.theta;
+
+  ////////////////
+  pinMode(EMIT_PIN, OUTPUT);
+  digitalWrite(EMIT_PIN, LOW);
+  ////////////////
+
+  left_pid.initialise(KP_L, KI_L, KD_L);
+  right_pid.initialise(KP_R, KI_R, KD_R);
+  left_pid.reset();
+  right_pid.reset();
+
+  drive_est_ts = drive_pid_ts = millis();
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  if (now - drive_est_ts >= DRIVE_EST_MS) {
+    unsigned long dt = now - drive_est_ts;
+    drive_est_ts = now;
+
+    long e0 = count_e0, e1 = count_e1;
+    long d0 = e0 - d_last_e0;
+    long d1 = e1 - d_last_e1;
+    d_last_e0 = e0;
+    d_last_e1 = e1;
+
+    spdR_cps = (float)d0 / ((float)dt / 1000.0f);
+    spdL_cps = (float)d1 / ((float)dt / 1000.0f);
+
+    kin.update();
+  }
+
+  // -------- Stage 0: Turn to 30 deg --------
+  if (stage == 0) {
+    float target = M_PI / 6.0f;
+    float err = wrapPi(target - kin.theta);
+
+    if (fabs(err) < (2.0f * M_PI / 180.0f)) {
+      motors.setPWM(0, 0);
+      delay(500);
+      stage = 1;
+      return;
+    }
+
+    float turn_pwm = 15;
+    motors.setPWM(-turn_pwm, +turn_pwm);
+    return;
+  }
+
+  // -------- Stage 1: Pause --------
+  if (stage == 1) {
+    motors.setPWM(0, 0);
+    delay(500);
+    theta0 = kin.theta;
+    stage = 2;
+    return;
+  }
+
+  // -------- Stage 2: Arc Motion --------
+  float dtheta = wrapPi(kin.theta - theta0);
+
+  if (dtheta <= -M_PI / 3.0f) {
+    motors.setPWM(0, 0);
+    while (1) {}
+  }
+
+  if (now - drive_pid_ts >= DRIVE_PID_MS) {
+    drive_pid_ts = now;
+
+    const float R_arc = 450.0f;
+    const float R_L = R_arc - wheel_sep;
+    const float R_R = R_arc + wheel_sep;
+
+    float v_center = DEMAND_CS;
+
+    // ★补偿层★
+    const float SCALE_L = 0.904f;  // 右轮（KP_L）稍微减速
+    const float SCALE_R = 1.00f;  // 左轮（KP_R）不变
+
+    float demandL = v_center * (R_L / R_arc) * SCALE_L;   // 右轮
+    float demandR = v_center * (R_R / R_arc) * SCALE_R;   // 左轮
+
+    float measL = (spdL_cps + d_mL1 + d_mL2) / 3.0f;
+    float measR = (spdR_cps + d_mR1 + d_mR2) / 3.0f;
+    d_mL2 = d_mL1; d_mL1 = spdL_cps;
+    d_mR2 = d_mR1; d_mR1 = spdR_cps;
+
+    float uL = left_pid.update(demandL, measL);   // KP_L → 右轮
+    float uR = right_pid.update(demandR, measR);  // KP_R → 左轮
+    float uLc = clampf(uL, -12.0f, 12.0f);
+    float uRc = clampf(uR, -12.0f, 12.0f);
+
+    float baseL = (demandL >= 0.0f) ? kF_L : -kF_L;
+    float baseR = (demandR >= 0.0f) ? kF_R : -kF_R;
+
+    float pwmL = clampf(baseL + uLc, -DRIVE_PWM_LIMIT, DRIVE_PWM_LIMIT);
+    float pwmR = clampf(baseR + uRc, -DRIVE_PWM_LIMIT, DRIVE_PWM_LIMIT);
+
+    motors.setPWM(iround(pwmL), iround(pwmR));
+  }
+}
+
+
+
