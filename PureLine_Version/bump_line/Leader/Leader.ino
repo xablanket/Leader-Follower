@@ -29,7 +29,7 @@ const float DEMAND_CS = -300.0f;
 const int   kF_L      = 16;
 const int   kF_R      = 15;
 
-float KP_L = 0.04400f, KI_L = 0.00000f, KD_L = 0.0f;
+float KP_L = 0.04025f, KI_L = 0.00000f, KD_L = 0.0f;
 float KP_R = 0.07000f, KI_R = 0.00000f, KD_R = 0.0f;
 
 unsigned long drive_est_ts = 0, drive_pid_ts = 0;
