@@ -1,0 +1,86 @@
+// =====================================================
+// ===============  DATA RECORD MODE  ==================
+// =====================================================
+//
+// 功能：
+// 每按一次按钮 → 自动采样 bump 50 次（每次间隔30ms）
+// 并打印 CSV 格式：
+// sample_index,raw_value
+//
+// 你可以指定当前距离（手动输入到 distance_cm）
+// 然后 dataset 会变成：
+// distance_cm,sample_index,raw_value
+//
+// Python 可直接读取
+// =====================================================
+
+
+// ===== 用户可调参数 =====
+const int RECORD_SAMPLES = 50;     // 一共采样 50 次
+const int RECORD_INTERVAL = 30;    // 每次间隔 30ms
+const int BUTTON_PIN = 14;         // 按钮（A0 的数字模式）
+
+int distance_cm = 0;               // 你每次先手动在串口输入距离（3,5,7,10 ...）
+
+// ====== 内部状态 ======
+bool record_request = false;
+unsigned long record_ts = 0;
+int record_count = 0;
+
+
+// ====== 串口设置距离 ======
+void serialEvent() {
+  if (Serial.available()) {
+    int d = Serial.parseInt();
+    if (d > 0 && d < 100) {
+      distance_cm = d;
+      Serial.print("【Distance Set To 】");
+      Serial.println(distance_cm);
+    }
+  }
+}
+
+
+// ====== 数据采集模式 ======
+void dataRecordMode() {
+
+  // 监听按钮开始
+  if (!record_request && digitalRead(BUTTON_PIN) == LOW) {
+    delay(20); // 消抖
+    if (digitalRead(BUTTON_PIN) == LOW) {
+      record_request = true;
+      record_count = 0;
+      record_ts = millis();
+
+      Serial.println("===== DATA RECORD START =====");
+      Serial.println("distance_cm,sample_id,raw");  // CSV 头
+    }
+  }
+
+  // 未触发，不工作
+  if (!record_request) return;
+
+  // 采样时机未到
+  if (millis() - record_ts < RECORD_INTERVAL) return;
+
+  // 更新时间戳
+  record_ts += RECORD_INTERVAL;
+
+  // 读取 bump（A6）
+  int raw = analogRead(A6);
+
+  // 输出一条 CSV 数据
+  Serial.print(distance_cm);
+  Serial.print(",");
+  Serial.print(record_count);
+  Serial.print(",");
+  Serial.println(raw);
+
+  record_count++;
+
+  // 采样结束
+  if (record_count >= RECORD_SAMPLES) {
+    record_request = false;
+    Serial.println("===== DATA RECORD END =====");
+  }
+}

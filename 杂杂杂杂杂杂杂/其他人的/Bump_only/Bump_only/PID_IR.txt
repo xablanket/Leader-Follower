@@ -1,0 +1,148 @@
+// Follower PID + Bump-only + Small-Angle Steering (Non-blocking)
+
+// === Includes ===
+#include "Encoders.h"
+#include "Motors.h"
+#include "PID.h"
+#include "Kinematics.h"
+
+#define BUMP_L 4
+#define BUMP_R 5
+#define EMIT_PIN 11
+
+Motors_c motors;
+Kinematics_c kin;
+PID_c pidL, pidR;
+
+#define DRIVE_EST_MS 20
+#define DRIVE_PID_MS 40
+#define DRIVE_PWM_LIMIT 60
+
+float KP_L = 0.04025, KI_L = 0.00005, KD_L = 0;
+float KP_R = 0.07000, KI_R = 0.00005, KD_R = 0;
+
+const int kF_L = 16;
+const int kF_R = 16;
+
+#define LOST_TH 3800
+#define NEAR_TH 300
+
+int faceCount = 0;
+bool faceCrash = false;
+
+unsigned long ts_est = 0, ts_pid = 0;
+long last_e0 = 0, last_e1 = 0;
+float spdL = 0, spdR = 0;
+
+unsigned long last_d = 9999;
+
+unsigned long readBump(int pin) {
+  pinMode(pin, OUTPUT);
+  digitalWrite(pin, HIGH);
+  delayMicroseconds(10);
+  pinMode(pin, INPUT);
+  unsigned long t0 = micros();
+  while (digitalRead(pin) == HIGH) {
+    if (micros() - t0 > 4500) break;
+  }
+  return micros() - t0;
+}
+
+float mapIRtoCS(unsigned long d) {
+  if (d > LOST_TH) return 0;
+  if (d < 150) return 0;
+  float cs = d * 0.18;
+  if (cs > 300) cs = 300;
+  return cs;
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  motors.initialise();
+  setupEncoder0();
+  setupEncoder1();
+
+  pidL.initialise(KP_L, KI_L, KD_L);
+  pidR.initialise(KP_R, KI_R, KD_R);
+
+  kin.initialise(0,0,0);
+
+  pinMode(BUMP_L, INPUT);
+  pinMode(BUMP_R, INPUT);
+  pinMode(EMIT_PIN, INPUT);
+
+  ts_est = ts_pid = millis();
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  unsigned long dL = readBump(BUMP_L);
+  unsigned long dR = readBump(BUMP_R);
+  unsigned long d = (dL + dR) / 2;
+
+  Serial.print("L="); Serial.print(dL);
+  Serial.print("  R="); Serial.print(dR);
+  Serial.print("  AVG="); Serial.println(d);
+
+  if (d > LOST_TH && last_d < NEAR_TH) {
+    if (fabs(spdL) < 5 && fabs(spdR) < 5) {
+      faceCount++;
+      if (faceCount >= 5) {
+        faceCrash = true;
+      }
+    }
+  } else {
+    faceCount = 0;
+  }
+
+  last_d = d;
+
+  if (now - ts_est >= DRIVE_EST_MS) {
+    ts_est = now;
+
+    long e0 = count_e0;
+    long e1 = count_e1;
+
+    long de0 = e0 - last_e0;
+    long de1 = e1 - last_e1;
+
+    last_e0 = e0;
+    last_e1 = e1;
+
+    spdR = de0 / (DRIVE_EST_MS / 1000.0f);
+    spdL = de1 / (DRIVE_EST_MS / 1000.0f);
+
+    kin.update();
+  }
+
+  if (now - ts_pid >= DRIVE_PID_MS) {
+    ts_pid = now;
+
+    float demand;
+    if (faceCrash) demand = 0;
+    else demand = mapIRtoCS(d);
+
+    float uL = pidL.update(demand, spdL);
+    float uR = pidR.update(demand, spdR);
+
+    float pwmL = kF_L + uL;
+    float pwmR = kF_R + uR;
+
+    float steer = (float)dR - (float)dL;
+    float turn = steer * 0.009;
+    if (turn > 10) turn = 10;
+    if (turn < -10) turn = -10;
+
+    pwmL -= turn;
+    pwmR += turn;
+
+    if (pwmL > DRIVE_PWM_LIMIT) pwmL = DRIVE_PWM_LIMIT;
+    if (pwmL < -DRIVE_PWM_LIMIT) pwmL = -DRIVE_PWM_LIMIT;
+    if (pwmR > DRIVE_PWM_LIMIT) pwmR = DRIVE_PWM_LIMIT;
+    if (pwmR < -DRIVE_PWM_LIMIT) pwmR = -DRIVE_PWM_LIMIT;
+
+    motors.setPWM((int)pwmL, (int)pwmR);
+  }
+}

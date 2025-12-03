@@ -1,0 +1,185 @@
+
+#include "Motors.h"         
+#include "PID.h"            
+#include "Kinematics.h"  
+#include "BumpSensors_Digital.h"  // 使用Digital模式的bump传感器
+#include <math.h>
+#include "Encoders.h"
+
+// ========== 基础组件 ==========
+Motors_c motors;    
+Kinematics_c pose; 
+BumpSensors_Digital_c bump_sensors;  // Digital模式bump传感器
+
+PID_c turn_pid;  // 用于旋转控制的PID
+
+// ========== Leader跟随参数 ==========
+const bool DEBUG_SERIAL = true;
+const float TURN_MAX_SPEED = 40.0f;     // 最大旋转速度
+const float ALIGNMENT_TOLERANCE = 100.0f; // 对齐容差（微秒）
+
+// ========== 跟随移动参数 ==========
+const float FOLLOW_SPEED = 30.0f;       // 跟随前进速度（PWM）
+const float MIN_SIGNAL_CHANGE = 100.0f; // 最小信号变化（检测Leader）
+
+// ========== 更新位姿 ==========
+void updatePose(){
+  static unsigned long pose_ts = 0;
+  if ( millis() - pose_ts >= 10 ) { 
+    pose_ts = millis(); 
+    pose.update(); 
+  }
+}
+
+// ========== 跟随Leader（Digital模式）==========
+void followLeaderDigital() {
+  // 读取bump传感器信号
+  float ir_balance = bump_sensors.getBalance();
+  float signal_change = bump_sensors.getSignalChange();
+  
+  // 检查是否检测到Leader
+  // Digital模式：时间减少 = 信号增强 = 检测到Leader
+  if (signal_change < MIN_SIGNAL_CHANGE) {
+    // 没有检测到Leader，停止
+    motors.setPWM(0, 0);
+    turn_pid.reset();
+    
+    if (DEBUG_SERIAL) {
+      static unsigned long debug_ts = 0;
+      if (millis() - debug_ts >= 500) {
+        debug_ts = millis();
+        Serial.println("未检测到Leader - 停止");
+        Serial.print("信号变化: "); Serial.print(signal_change, 2);
+        Serial.print(" | 左: "); Serial.print(bump_sensors.readings[0]);
+        Serial.print(" us | 右: "); Serial.print(bump_sensors.readings[1]);
+        Serial.println(" us");
+      }
+    }
+    return;
+  }
+  
+  // 控制更新（每50ms）
+  static unsigned long control_ts = 0;
+  if (millis() - control_ts >= 50) {
+    control_ts = millis();
+    
+    // ========== 1. 计算旋转控制（对齐方向）==========
+    float turn_pwm = 0;
+    if (fabs(ir_balance) > ALIGNMENT_TOLERANCE) {
+      // 需要旋转对齐
+      // Digital模式：左时间短=Leader在左，右时间短=Leader在右
+      turn_pwm = turn_pid.update(0.0f, ir_balance);
+      turn_pwm = constrain(turn_pwm, -TURN_MAX_SPEED, TURN_MAX_SPEED);
+    } else {
+      // 已对齐，重置旋转PID
+      turn_pid.reset();
+    }
+    
+    // ========== 2. 简单的前进控制 ==========
+    float forward_pwm = FOLLOW_SPEED;  // 检测到Leader就持续前进
+    
+    // ========== 3. 混合控制：旋转 + 前进 ==========
+    // 如果需要大幅旋转，减少前进速度
+    float turn_factor = fabs(turn_pwm) / TURN_MAX_SPEED;  // 0-1
+    forward_pwm *= (1.0 - turn_factor * 0.6);  // 旋转时减速60%
+    
+    // 计算左右轮PWM
+    int left_pwm = (int)(forward_pwm - turn_pwm);
+    int right_pwm = (int)(forward_pwm + turn_pwm);
+    
+    // 限制PWM范围
+    left_pwm = constrain(left_pwm, -60, 60);
+    right_pwm = constrain(right_pwm, -60, 60);
+    
+    motors.setPWM(left_pwm, right_pwm);
+    
+    // ========== 4. 调试输出 ==========
+    if (DEBUG_SERIAL) {
+      static unsigned long debug_ts = 0;
+      if (millis() - debug_ts >= 200) {
+        debug_ts = millis();
+        
+        Serial.print("跟随 | 信号变化: "); Serial.print(signal_change, 0);
+        Serial.print(" us | 左右差: "); Serial.print(ir_balance, 0);
+        Serial.print(" us | 转向: "); Serial.print((int)turn_pwm);
+        Serial.print(" | 前进: "); Serial.print((int)forward_pwm);
+        Serial.print(" | L/R: "); Serial.print(left_pwm);
+        Serial.print("/"); Serial.print(right_pwm);
+        
+        // 状态指示
+        if (fabs(ir_balance) > ALIGNMENT_TOLERANCE) {
+          Serial.print(" | 调整方向");
+        } else {
+          Serial.print(" | 已对齐");
+        }
+        
+        Serial.println(" | 跟随中");
+        
+        // 详细传感器读数
+        Serial.print("  [传感器] 左: "); Serial.print(bump_sensors.readings[0]);
+        Serial.print(" us | 右: "); Serial.print(bump_sensors.readings[1]);
+        Serial.print(" us | 背景左: "); Serial.print(bump_sensors.background[0]);
+        Serial.print(" us | 背景右: "); Serial.println(bump_sensors.background[1]);
+      }
+    }
+  }
+}
+
+// ========== SETUP ==========
+void setup() {
+  // 初始化串口
+  Serial.begin(9600);
+  delay(1000);
+  Serial.println("\n\n========================================");
+  Serial.println("*** Follower - Leader跟随程序 ***");
+  Serial.println("模式：Bump Sensors Digital模式跟随");
+  Serial.println("========================================");
+
+  // 初始化电机
+  motors.initialise();
+
+  // 初始化编码器
+  setupEncoder0();
+  setupEncoder1();
+
+  // 初始化位姿
+  pose.initialise(0, 0, 0);
+  
+  // 初始化bump传感器（Digital模式）
+  bump_sensors.initialiseForDigital();
+  
+  // 校准背景值
+  bump_sensors.calibrateBackground();
+  
+  // 初始化旋转PID控制器
+  turn_pid.initialise(0.01f, 0.0001f, 0.005f);  // Digital模式PID参数
+  turn_pid.reset();
+
+  Serial.println("\n系统初始化完成");
+  Serial.println("========================================");
+  Serial.println("控制模式：Digital Bump Sensors跟随");
+  Serial.println("PID参数：");
+  Serial.println("  - 旋转PID: Kp=0.01, Ki=0.0001, Kd=0.005");
+  Serial.println("跟随参数：");
+  Serial.println("  - 跟随速度: 30 PWM");
+  Serial.println("  - 最小信号变化: 100 us");
+  Serial.println("⚠️  注意：");
+  Serial.println("  - 使用Digital模式读取bump传感器");
+  Serial.println("  - 时间减少 = 信号增强 = Leader靠近");
+  Serial.println("  - Follower会持续跟随Leader");
+  Serial.println("========================================");
+  Serial.println("Follower已准备好，等待检测Leader信号...\n");
+  delay(2000);
+}
+
+// ========== LOOP ==========
+void loop() {
+  // 更新位姿
+  updatePose();
+
+  // 执行跟随（Digital模式）
+  followLeaderDigital();
+  
+  delay(10);
+}
+

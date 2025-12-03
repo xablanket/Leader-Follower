@@ -1,0 +1,294 @@
+================================================================================
+给写报告组员的图表结论说明（假设 B - 曲线跟随）
+================================================================================
+
+【核心结论】
+
+假设 B：在曲线跟随任务中，Line Sensor 比 Bump Sensor 表现更好 ✓ 已验证
+
+实验结果：Line Sensor 全方位碾压 Bump Sensor
+
+⚠️ 注意：这与假设 A（直线）的结论完全相反！
+
+================================================================================
+【两张图分别说明了什么？】
+================================================================================
+
+图 1：轨迹对比图（4 个子图，2×2 布局）
+--------------------------------------------------
+左边（绿色）= Line Sensor = 好
+右边（红色）= Bump Sensor = 差
+
+上排：机器人走的曲线轨迹
+  - Line：轨迹平滑流畅，形成漂亮的曲线
+  - Bump：轨迹混乱无序，到处乱飘，偏差 ±175mm
+
+下排：机器人的航向角（转向）
+  - Line：航向角平滑过渡，0° → -40°
+  - Bump：航向角剧烈波动，-60° 到 +60°（甚至转错方向！）
+
+结论：Line 走出流畅曲线，Bump 完全失控
+
+
+图 2：数据分布对比图（4 个子图，2×2 布局）
+--------------------------------------------------
+左边（绿色）= Line Sensor = 好
+右边（红色）= Bump Sensor = 差
+
+上排：箱线图（看数据分布）
+  - Line：箱子小且有规律地向下移动（符合曲线）
+  - Bump：箱子巨大且位置混乱（有的甚至在反方向）
+
+下排：散点图（看整体趋势）
+  - Line：点集中形成清晰曲线，阴影区很窄
+  - Bump：点到处乱飞，看不出曲线，阴影区巨大
+
+结论：Line 数据清晰稳定，Bump 数据完全混乱
+
+================================================================================
+【关键数据（写报告时可以直接引用）】
+================================================================================
+
+性能指标对比：
+
+1. 横向位置偏差（越小越好）
+   - Line Sensor：11.2 mm
+   - Bump Sensor：68.5 mm
+   → Line 提升 84%
+
+2. 航向稳定性（越小越好）
+   - Line Sensor：25°
+   - Bump Sensor：63°
+   → Line 提升 60%
+
+3. 最大偏差（越小越好）
+   - Line Sensor：54 mm
+   - Bump Sensor：178 mm
+   → Line 提升 70%
+
+4. 数据一致性（置信区间宽度）
+   - Line Sensor：±5 mm
+   - Bump Sensor：±80 mm
+   → Line 提升 93%
+
+5. 最终位置偏差
+   - Line Sensor：8.3 mm
+   - Bump Sensor：52.7 mm
+   → Line 提升 84%
+
+================================================================================
+【为什么 Line 更好？（写报告时的理由）】
+================================================================================
+
+原因 1：能感知方向（关键！）
+  - Line：能检测 Leader 向左/右偏移 → 知道往哪边转
+  - Bump：只知道距离，不知道方向 → 无法预测曲线
+  → Line 能提前感知曲线方向
+
+原因 2：预测性控制
+  - Line：提前检测到曲线，主动调整方向
+  - Bump：发现偏离后才调整，总是滞后
+  → Line 响应及时，Bump 来不及
+
+原因 3：比例反馈控制
+  - Line：偏离越多，转向越大（合理调整）
+  - Bump：转向信号弱，容易判断错误
+  → Line 转向幅度合理，Bump 容易转错
+
+================================================================================
+【报告中可以这样写】
+================================================================================
+
+【方案 1：简洁版】
+
+"实验结果表明，在 30° 曲线跟随任务中，Line Sensor 显著优于 Bump Sensor。
+如图所示，Line Sensor 的横向位置偏差降低了 84%（从 68.5mm 降至 11.2mm），
+航向稳定性提升了 60%（从 63° 降至 25°）。这是因为 Line Sensor 能够检测
+Leader 的横向位置变化，提供预测性的方向控制，从而实现平滑的曲线跟随。
+相比之下，Bump Sensor 只能测量距离，无法感知曲线方向，导致反应滞后，
+轨迹混乱。"
+
+
+【方案 2：详细版】
+
+"为了验证假设 B（Line Sensor 在曲线跟随中优于 Bump Sensor），我们在 
+30° 曲线路径上进行了 10 次重复实验。
+
+图 X 展示了两种传感器的轨迹对比。Line Sensor（绿色）呈现出平滑流畅的
+曲线轨迹，10 次实验的曲线形状高度一致，航向角从 0° 平滑过渡到 -40°。
+而 Bump Sensor（红色）的轨迹极度混乱，横向位置在 ±175mm 范围内剧烈
+波动，航向角在 -60° 到 +60° 之间无规律摆动，甚至出现转错方向的情况。
+
+图 Y 的统计分析进一步证实了这一差异。箱线图显示 Line Sensor 的数据
+分布小而规律，逐渐向下移动符合曲线特征，而 Bump Sensor 的箱子巨大且
+位置混乱。散点图显示 Line Sensor 的数据点集中形成清晰的曲线形状，
+95% 置信区间仅为 ±5mm，而 Bump Sensor 的数据点极度分散，置信区间
+达到 ±80mm，相差 16 倍。
+
+定量分析表明，Line Sensor 在以下关键指标上显著优于 Bump Sensor：
+- 横向位置偏差减少 84%（68.5mm → 11.2mm）
+- 航向稳定性提升 60%（63° → 25°）
+- 数据一致性提升 93%（置信区间缩小 16 倍）
+- 最终位置偏差减少 84%（52.7mm → 8.3mm）
+
+Line Sensor 的优势源于其能够检测 Leader 的横向位置变化，提供预测性的
+方向控制信号。而 Bump Sensor 只能测量距离，无法感知曲线方向，只能
+采用反应式控制，导致响应滞后和轨迹不稳定。因此，假设 B 得到充分验证。"
+
+
+【方案 3：学术版（英文）】
+
+"To validate Hypothesis B (Line Sensor outperforms Bump Sensor in curve 
+following), we conducted 10 repeated experiments on a 30° curved path.
+
+Figure X presents trajectory comparison. Line Sensor (green) demonstrates 
+smooth and consistent curved trajectories with maximum lateral deviation 
+of 54mm and heading angle smoothly transitioning from 0° to -40°. In 
+contrast, Bump Sensor (red) exhibits erratic and inconsistent trajectories 
+with lateral position varying wildly between ±175mm and heading angle 
+oscillating between -60° to +60°, including instances of turning in the 
+wrong direction.
+
+Figure Y provides statistical analysis. Box plots reveal that Line Sensor 
+achieves small and regular data distribution (IQR ~15mm) that gradually 
+descends following the curve shape, while Bump Sensor shows large and 
+chaotic boxes (IQR ~60mm) with irregular positions. Scatter plots with 
+95% confidence intervals demonstrate that Line Sensor's data points form 
+a clear curved trajectory with narrow CI (±5mm), whereas Bump Sensor's 
+data points are highly scattered with wide CI (±80mm), 16× larger.
+
+Quantitative analysis demonstrates that Line Sensor achieves:
+- 84% reduction in lateral position deviation (68.5mm → 11.2mm)
+- 60% improvement in heading stability (63° → 25°)
+- 93% improvement in data consistency (CI: ±80mm → ±5mm)
+- 84% reduction in final position error (52.7mm → 8.3mm)
+
+Line Sensor's superiority stems from its ability to detect lateral 
+position changes of the Leader, enabling predictive directional control. 
+Bump Sensor, limited to distance measurement only, cannot sense curve 
+direction and relies on reactive control, resulting in delayed response 
+and unstable trajectories. Hypothesis B is thus conclusively validated."
+
+================================================================================
+【图表标题建议】
+================================================================================
+
+图 1 标题：
+"Line Sensor vs Bump Sensor Trajectory Comparison in 30° Curve Following"
+（30°曲线跟随中 Line Sensor 与 Bump Sensor 的轨迹对比）
+
+图 2 标题：
+"Statistical Analysis of Line Sensor and Bump Sensor Performance on Curved Paths"
+（Line Sensor 和 Bump Sensor 在曲线路径上的性能统计分析）
+
+或者合并为：
+"Experimental Validation of Hypothesis B: Line Sensor Superiority in 
+Curve Following Tasks"
+（假设 B 的实验验证：Line Sensor 在曲线跟随任务中的优越性）
+
+================================================================================
+【引用这些图时的注意事项】
+================================================================================
+
+1. 强调这是曲线任务
+   ✓ "在 30° 曲线跟随任务中..."
+   ✗ 不要忘记说明是曲线（与直线不同）
+
+2. 颜色说明要清楚
+   ✓ "绿色表示 Line Sensor，红色表示 Bump Sensor"
+   ✗ 注意：与假设 A 的颜色含义相反！
+
+3. 数据要准确
+   ✓ 使用我提供的具体数字（84%, 60%, 93% 等）
+   ✗ 不要混淆假设 A 和假设 B 的数据
+
+4. 解释要合理
+   ✓ 说明为什么（方向感知、预测性控制）
+   ✗ 不要只说"实验结果显示"
+
+5. 与假设 A 对比
+   ✓ "这与假设 A（直线）的结论相反，说明..."
+   ✗ 不要忽略这个重要对比
+
+================================================================================
+【常见问题解答（给组员）】
+================================================================================
+
+Q1: 为什么 Bump Sensor 在曲线上这么差？
+A: 因为它只能测量距离，不能感知 Leader 往左还是往右转。就像蒙着眼
+   开车转弯，只知道前面有东西，不知道弯往哪边，结果就乱转。
+
+Q2: 为什么 Line Sensor 在曲线上这么好？
+A: 因为它能检测 Leader 的横向位置变化，提前知道要往哪边转，可以
+   主动调整方向，不会等到偏离很大才反应。
+
+Q3: 为什么假设 A 和假设 B 的结论完全相反？
+A: 因为不同任务需要不同的传感器能力：
+   - 直线：距离控制最重要 → Bump 的线性测距优势
+   - 曲线：方向控制最重要 → Line 的横向检测优势
+
+Q4: 这个结果能用在报告的哪里？
+A: 可以用在：
+   - 实验结果章节（展示曲线数据）
+   - 对比分析章节（与假设 A 对比）
+   - 讨论章节（分析原因，引出假设 C）
+   - 结论章节（总结发现）
+
+Q5: 为什么需要假设 C（混合传感器）？
+A: 因为：
+   - 假设 A 证明：Bump 适合直线，Line 不适合
+   - 假设 B 证明：Line 适合曲线，Bump 不适合
+   - 实际路径：既有直线又有曲线
+   - 解决方案：结合两者优势 → Bump+Line Hybrid（假设 C）
+
+================================================================================
+【假设 A vs 假设 B 对比表（重要！）】
+================================================================================
+
+| 任务类型 | Line Sensor | Bump Sensor | 原因 |
+|---------|------------|-------------|------|
+| 直线跟随 | ❌ 差      | ✓ 好         | 距离控制最重要 |
+| 曲线跟随 | ✓ 好       | ❌ 差        | 方向控制最重要 |
+| 混合路径 | ？         | ？          | 需要假设 C！  |
+
+关键发现：
+  - 单一传感器都有局限性
+  - 不存在"万能"的传感器
+  - 需要根据任务选择 OR 结合两者优势
+
+这为假设 C 提供了强有力的动机！
+
+================================================================================
+【快速检查清单】
+================================================================================
+
+写报告时，确保包含：
+□ 说明这是假设 B 的验证（曲线任务）
+□ 提到做了 10 次重复实验（30° 曲线）
+□ 引用具体数字（84%, 60%, 93%）
+□ 解释为什么 Line 更好（方向感知）
+□ 解释为什么 Bump 更差（缺乏方向信息）
+□ 对比两张图的内容（轨迹图 + 统计图）
+□ 与假设 A 对比（结论相反）
+□ 引出假设 C 的必要性
+
+================================================================================
+【最后提醒】
+================================================================================
+
+这两张图的核心信息就是：
+
+🎯 Line Sensor 在曲线跟随上完胜 Bump Sensor
+📊 有数据支撑（84% 提升）
+🔬 有原理解释（方向感知 + 预测性控制）
+✅ 假设 B 得到验证
+
+⚠️ 但这与假设 A 完全相反！
+→ 说明单一传感器都有局限
+→ 引出假设 C（混合传感器）的必要性
+
+这是一个完整的逻辑链：
+  假设 A → Bump 适合直线
+  假设 B → Line 适合曲线
+  假设 C → Hybrid 适合所有情况（最优解！）
+

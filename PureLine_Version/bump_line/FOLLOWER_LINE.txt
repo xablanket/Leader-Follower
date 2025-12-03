@@ -1,0 +1,145 @@
+#include "Encoders.h"
+#include "Motors.h"
+#include "PID.h"
+#include "Kinematics.h"
+#include "LineSensors.h"
+
+#define BUMP_L 4
+#define BUMP_R 5
+#define EMIT_PIN 11
+
+#define BTN_PIN 14
+#define BUZZER_PIN 6
+
+Encoders_c encoders;
+Motors_c motors;
+PID_c pidL, pidR;
+Kinematics_c kin;
+LineSensors_c line_sensors;
+
+unsigned long bump_base = 0;
+unsigned long line_L_base = 0;
+unsigned long line_R_base = 0;
+
+unsigned long beep_off_time = 0;
+unsigned long t0 = 0;
+
+bool stage_bump = false;
+bool stage_line = false;
+bool stage_run = false;
+
+unsigned long readBump(int pin) {
+  unsigned long start = micros();
+  while (micros() - start < 4500) {
+    if (digitalRead(pin) == LOW) break;
+  }
+  return micros() - start;
+}
+
+void softBeep(int duration_ms) {
+  tone(BUZZER_PIN, 440);
+  beep_off_time = millis() + duration_ms;
+}
+
+void setup() {
+  encoders.initialise();
+  motors.initialise();
+  kin.initialise(0, 0, 0);
+
+  pinMode(BUMP_L, INPUT);
+  pinMode(BUMP_R, INPUT);
+
+  pinMode(EMIT_PIN, INPUT);
+
+  line_sensors.initialiseForADC();
+
+  pinMode(BTN_PIN, INPUT_PULLUP);
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  Serial.begin(115200);
+  softBeep(40);
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  if (beep_off_time && now >= beep_off_time) {
+    noTone(BUZZER_PIN);
+    beep_off_time = 0;
+  }
+
+  if (!stage_bump) {
+    if (digitalRead(BTN_PIN) == LOW) {
+      delay(20);
+      if (digitalRead(BTN_PIN) == LOW) {
+        unsigned long L = readBump(BUMP_L);
+        unsigned long R = readBump(BUMP_R);
+        bump_base = (L + R) / 2;
+        softBeep(100);
+        while (digitalRead(BTN_PIN) == LOW);
+        softBeep(40);
+        stage_bump = true;
+      }
+    }
+    return;
+  }
+
+  if (!stage_line) {
+    if (digitalRead(BTN_PIN) == LOW) {
+      delay(20);
+      if (digitalRead(BTN_PIN) == LOW) {
+        line_sensors.readSensorsADC();
+        line_L_base = line_sensors.readings[0];
+        line_R_base = line_sensors.readings[4];
+        softBeep(100);
+        while (digitalRead(BTN_PIN) == LOW);
+        softBeep(40);
+        stage_line = true;
+      }
+    }
+    return;
+  }
+
+  if (!stage_run) {
+    if (digitalRead(BTN_PIN) == LOW) {
+      delay(20);
+      if (digitalRead(BTN_PIN) == LOW) {
+        t0 = millis();
+        softBeep(200);
+        while (digitalRead(BTN_PIN) == LOW);
+        softBeep(40);
+        stage_run = true;
+      }
+    }
+    return;
+  }
+
+  unsigned long t = (now - t0) % 200;
+  bool bump_window = (t < 100);
+  static bool last_window = false;
+
+  if (bump_window != last_window) {
+    last_window = bump_window;
+
+    if (bump_window) {
+      unsigned long L = readBump(BUMP_L);
+      unsigned long R = readBump(BUMP_R);
+      unsigned long raw = (L + R) / 2;
+    } else {
+      line_sensors.readSensorsADC();
+      int left_raw = line_sensors.readings[0];
+      int right_raw = line_sensors.readings[4];
+
+      int left = left_raw - line_L_base;
+      int right = right_raw - line_R_base;
+      int diff = right - left;
+
+      Serial.print("L:");
+      Serial.print(left);
+      Serial.print(", R:");
+      Serial.print(right);
+      Serial.print(", d:");
+      Serial.println(diff);
+    }
+  }
+}
