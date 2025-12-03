@@ -1,0 +1,2 @@
+15组， 10个变量： x, y, theta, spdL, spdR, IR_center, L_sig, R_sig, speed_cmd, steer_cmd
+每400ms一组，共6000ms。

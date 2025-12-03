@@ -1,0 +1,60 @@
+======================================================================
+BUMP SENSOR 30-DEGREE CURVE FOLLOWING PROBLEM REPORT
+Demonstrating Bump Sensor DISADVANTAGES in Curve Following
+======================================================================
+
+[EXPERIMENT OVERVIEW]
+  Number of experiments: 10
+  Task: 30-degree curve following Leader robot
+  Sensor: Bump Sensor (proximity detection)
+
+[HYPOTHESIS]
+  Line Sensor outperforms Bump Sensor in curve following tasks.
+  This report demonstrates the limitations of Bump Sensor.
+
+[BUMP SENSOR KEY DISADVANTAGES IN CURVE FOLLOWING]
+
+  ✗ Problem 1: Inconsistent Curve Trajectory
+     - Mean Y deviation std: 36.65 mm
+     - Mean max Y deviation: 121.32 mm
+     - Bump Sensor lacks continuous position feedback
+
+  ✗ Problem 2: Erratic Heading Angle Changes
+     - Mean max angle error: 39.75 deg
+     - Reactive control causes over-correction
+
+  ✗ Problem 3: Non-Proportional Sensor Response
+     - Sensor CV: 72.13%
+     - Binary detection unsuitable for gradual curves
+
+  ✗ Problem 4: Jerky Speed Control
+     - Mean speed change: 200.07 counts/s
+     - Stop ratio: 7.7%
+     - Frequent corrections lead to inefficient motion
+
+[WHY BUMP SENSOR FAILS IN CURVE FOLLOWING]
+
+  1. REACTIVE CONTROL: Bump Sensor only detects when too close,
+     causing delayed reactions and overshooting during curves
+
+  2. NO POSITION GRADIENT: Unlike Line Sensor, Bump Sensor cannot
+     detect how far off-course the robot is, only proximity
+
+  3. OSCILLATION: Constant correction-overcorrection cycle
+     leads to zigzag motion instead of smooth curves
+
+  4. SPEED INEFFICIENCY: Frequent stops and accelerations
+     waste energy and slow overall progress
+
+[CONCLUSION]
+  Bump Sensor demonstrates INFERIOR performance in 30° curve following:
+
+  • Trajectories are inconsistent across experiments
+  • Heading angle changes are erratic and unpredictable
+  • Sensor provides no proportional feedback for curves
+  • Motion is jerky with frequent corrections
+
+  ★ LINE SENSOR IS SUPERIOR FOR CURVE FOLLOWING TASKS
+  ★ BUMP SENSOR IS NOT RECOMMENDED FOR CURVED PATHS
+
+======================================================================
