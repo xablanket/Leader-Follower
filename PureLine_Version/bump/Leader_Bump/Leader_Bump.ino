@@ -33,7 +33,7 @@ const float DEMAND_CS = -300.0f;
 const int kF_L = 16;
 const int kF_R = 15;
 
-float KP_L = 0.04425f, KI_L = 0.0f, KD_L = 0.0f;
+float KP_L = 0.04025f, KI_L = 0.0f, KD_L = 0.0f;
 float KP_R = 0.07000f, KI_R = 0.0f, KD_R = 0.0f;
 
 unsigned long drive_est_ts = 0, drive_pid_ts = 0;
@@ -44,7 +44,7 @@ float d_mL1 = 0, d_mL2 = 0, d_mR1 = 0, d_mR2 = 0;
 float x0 = 0, y0 = 0;
 unsigned long state_start_ts = 0;
 
-#define STRAIGHT_DISTANCE_MM 400.0f
+#define STRAIGHT_DISTANCE_MM 450.0f
 
 static inline float clampf(float v, float lo, float hi) {
   if (v < lo) return lo;

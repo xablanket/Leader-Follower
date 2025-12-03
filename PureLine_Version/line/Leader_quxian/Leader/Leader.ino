@@ -45,9 +45,9 @@ float d_mL1 = 0, d_mL2 = 0, d_mR1 = 0, d_mR2 = 0;
 float x0 = 0, y0 = 0, theta0 = 0;
 unsigned long state_start_ts = 0;
 
-#define STRAIGHT_DISTANCE_MM 300.0f
+#define STRAIGHT_DISTANCE_MM 450.0f
 
-#define ARC_RADIUS_MM 511.0f
+#define ARC_RADIUS_MM 450.0f
 #define ARC_ANGLE_RAD (M_PI / 3.0f)
 
 const float SCALE_L = 0.904f;

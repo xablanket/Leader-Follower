@@ -138,7 +138,7 @@ void loop() {
     drive_pid_ts = now;
 
     const float wheel_sep = 70.0f;
-    const float R_arc     = 410.0f;
+    const float R_arc     = 450.0f;
     const float R_L = R_arc - wheel_sep;
     const float R_R = R_arc + wheel_sep;
 
