@@ -33,6 +33,6 @@ public:
     digitalWrite(R_DIR, (right_pwr < 0) ? REV : FWD);
     analogWrite(R_PWM, Rp);
   }
-};  // ← 正确关闭类定义
+};
 
 #endif

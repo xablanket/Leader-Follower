@@ -17,7 +17,7 @@ PID_c pidL;
 PID_c pidR;
 LineSensors_c line_sensors;
 
-unsigned long bump_base = 0;    // 只用于打印，不参与计算
+unsigned long bump_base = 0;
 
 int line_L_offset = 0;
 int line_R_offset = 0;
@@ -25,7 +25,6 @@ int line_R_offset = 0;
 unsigned long beep_off_time = 0;
 unsigned long t0 = 0;
 
-// ========== 数据记录（与纯Line版保持一致）==========
 #define MAX_RESULTS 15
 #define VARIABLES 10
 float results[MAX_RESULTS][VARIABLES];
@@ -35,14 +34,12 @@ unsigned long experiment_start_ts = 0;
 #define RECORD_INTERVAL_MS 400
 #define EXPERIMENT_DURATION_MS 6000
 
-// 记录用临时变量
 float rec_IR_center = 0;
 int rec_L_signal = 0;
 int rec_R_signal = 0;
 float rec_speed_cmd = 0;
 float rec_steer_cmd = 0;
 
-// 实验状态
 bool experiment_running = false;
 bool experiment_finished = false;
 
@@ -68,7 +65,6 @@ const float kF_L = 13.5f;
 const float kF_R = 13.5f;
 const float PWM_MAX = 60.0f;
 
-// steering 相关
 float diff_norm = 0.0f;
 float diff_filtered = 0.0f;
 float steer_term = 0.0f;
@@ -136,9 +132,8 @@ float mapIRtoCS_withSafety(unsigned long raw, unsigned long last) {
 void setup() {
   Serial.begin(115200);
 
-  // 红色LED初始化（第一次）
   pinMode(LED_RED, OUTPUT);
-  digitalWrite(LED_RED, LOW);   // 红LED常亮（active-low）
+  digitalWrite(LED_RED, LOW);
 
   motors.initialise();
   setupEncoder0();
@@ -155,13 +150,11 @@ void setup() {
   pinMode(BTN_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
 
-  // ★ 重要：在所有初始化后重新设置红LED ★
   pinMode(LED_RED, OUTPUT);
-  digitalWrite(LED_RED, LOW);   // 红LED常亮（active-low）
+  digitalWrite(LED_RED, LOW);
 
   softBeep(40);
 
-  // 第一次按钮：bump 标定（单帧，只打印，不参与计算）
   while (digitalRead(BTN_PIN) == HIGH) handleBeep();
   softBeep(40);
 
@@ -172,7 +165,6 @@ void setup() {
   softBeep(40);
   while (digitalRead(BTN_PIN) == LOW) handleBeep();
 
-  // 第二次按钮：line offset（30 帧平均）
   while (digitalRead(BTN_PIN) == HIGH) handleBeep();
   softBeep(40);
 
@@ -196,7 +188,6 @@ void setup() {
   softBeep(40);
   while (digitalRead(BTN_PIN) == LOW) handleBeep();
 
-  // 第三次按钮：进入主循环
   while (digitalRead(BTN_PIN) == HIGH) handleBeep();
   softBeep(40);
 
@@ -207,32 +198,21 @@ void setup() {
   ts_est = millis();
   ts_pid = millis();
 
-  // 初始化数据记录
   experiment_start_ts = millis();
   record_ts = millis();
   experiment_running = true;
   experiment_finished = false;
   results_index = 0;
 
-  Serial.println("\n========================================");
-  Serial.println("  FOLLOWER - Bump+Line Version");
-  Serial.println("  with Data Recording");
-  Serial.println("========================================");
-  Serial.println("Experiment Duration: 6 seconds");
-  Serial.println("Recording Interval: 400 ms");
-  Serial.println("Starting experiment...\n");
-
   while (digitalRead(BTN_PIN) == LOW) handleBeep();
 }
 
 void loop() {
-  // ★ 确保红LED持续点亮 ★
   digitalWrite(LED_RED, LOW);
   
   unsigned long now = millis();
   handleBeep();
 
-  // ========== 检查实验是否结束 ==========
   if (experiment_running && (now - experiment_start_ts >= EXPERIMENT_DURATION_MS)) {
     experiment_running = false;
     experiment_finished = true;
@@ -245,13 +225,11 @@ void loop() {
   }
   
   if (experiment_finished) {
-    return;  // 实验结束后不再执行
+    return;
   }
 
-  // 更新运动学（用于记录位置）
   kin.update();
 
-  // 20ms 速度估计
   if (now - ts_est >= 20) {
     unsigned long dt = now - ts_est;
     long e0 = count_e0;
@@ -266,7 +244,6 @@ void loop() {
     ts_est = now;
   }
 
-  // 40ms PID 内环
   if (now - ts_pid >= 40) {
     ts_pid = now;
 
@@ -284,7 +261,6 @@ void loop() {
     motors.setPWM(pwmL, pwmR);
   }
 
-  // 200ms bump/line window
   unsigned long t = (now - t0) % 200;
   bool bump_window = (t < 100);
   static bool last_window = false;
@@ -292,7 +268,6 @@ void loop() {
   if (bump_window != last_window) {
     last_window = bump_window;
 
-    // bump window：距离控制 —— 完全恢复原始 FOLLOWER 逻辑（raw 不做差分）
     if (bump_window) {
       unsigned long rawL = readBump(BUMP_L);
       unsigned long rawR = readBump(BUMP_R);
@@ -303,24 +278,19 @@ void loop() {
 
       demand_cs = mapIRtoCS_withSafety(raw, prev_raw);
 
-      // ★ 保存 Bump 传感器数据用于记录 ★
       rec_IR_center = (float)raw;
       rec_speed_cmd = demand_cs;
 
-      // steering 用的 demand_L / demand_R 在 line window 内更新
-      // 这里先把两边的目标设置成同一前进速度
       demand_L = demand_cs;
       demand_R = demand_cs;
     }
 
-    // line window：方向控制（line offset + steering）
     else {
       line_sensors.readSensorsADC();
 
       int L = line_sensors.readings[0] - line_L_offset;
       int R = line_sensors.readings[4] - line_R_offset;
 
-      // ★ 保存 Line 传感器原始信号用于记录（去除负值）★
       rec_L_signal = (L > 0) ? L : 0;
       rec_R_signal = (R > 0) ? R : 0;
 
@@ -336,7 +306,6 @@ void loop() {
 
       steer_term = K_steer * diff_filtered;
 
-      // ★ 保存转向指令用于记录 ★
       rec_steer_cmd = steer_term;
 
       demand_L = demand_cs - steer_term;
@@ -344,77 +313,53 @@ void loop() {
     }
   }
 
-  // ========== 数据记录（每 400ms）==========
   if (experiment_running && (now - record_ts >= RECORD_INTERVAL_MS)) {
     record_ts = now;
     recordData();
   }
 }
 
-// ============================================
-// 记录数据函数
-// 记录：x, y, theta, spdL, spdR, IR_center, L_sig, R_sig, speed_cmd, steer_cmd
-// ============================================
 void recordData() {
   if (results_index < MAX_RESULTS) {
-    results[results_index][0] = kin.x;            // X坐标 (mm)
-    results[results_index][1] = kin.y;            // Y坐标 (mm)
-    results[results_index][2] = kin.theta;        // 角度 (rad)
-    results[results_index][3] = spdL;             // 左轮速度 (counts/sec)
-    results[results_index][4] = spdR;             // 右轮速度 (counts/sec)
-    results[results_index][5] = rec_IR_center;    // Bump 传感器平均值
-    results[results_index][6] = (float)rec_L_signal;  // 左侧 Line 传感器信号
-    results[results_index][7] = (float)rec_R_signal;  // 右侧 Line 传感器信号
-    results[results_index][8] = rec_speed_cmd;    // 速度指令
-    results[results_index][9] = rec_steer_cmd;    // 转向指令
+    results[results_index][0] = kin.x;
+    results[results_index][1] = kin.y;
+    results[results_index][2] = kin.theta;
+    results[results_index][3] = spdL;
+    results[results_index][4] = spdR;
+    results[results_index][5] = rec_IR_center;
+    results[results_index][6] = (float)rec_L_signal;
+    results[results_index][7] = (float)rec_R_signal;
+    results[results_index][8] = rec_speed_cmd;
+    results[results_index][9] = rec_steer_cmd;
     results_index++;
   }
 }
 
-// ============================================
-// 输出CSV格式数据（与纯Line版格式一致）
-// ============================================
 void printResults() {
-  Serial.println("\n========== FOLLOWER DATA (CSV) ==========");
+  Serial.println("\n===========================DATA================");
   Serial.println("Sample,X_mm,Y_mm,Theta_rad,SpdL_cps,SpdR_cps,IR_center,L_signal,R_signal,Speed_cmd,Steer_cmd");
   
   for (int i = 0; i < results_index; i++) {
     Serial.print(i);
     Serial.print(",");
-    Serial.print(results[i][0], 2);  // X
+    Serial.print(results[i][0], 2);
     Serial.print(",");
-    Serial.print(results[i][1], 2);  // Y
+    Serial.print(results[i][1], 2);
     Serial.print(",");
-    Serial.print(results[i][2], 4);  // Theta
+    Serial.print(results[i][2], 4);
     Serial.print(",");
-    Serial.print(results[i][3], 1);  // SpdL
+    Serial.print(results[i][3], 1);
     Serial.print(",");
-    Serial.print(results[i][4], 1);  // SpdR
+    Serial.print(results[i][4], 1);
     Serial.print(",");
-    Serial.print(results[i][5], 1);  // IR_center (Bump avg)
+    Serial.print(results[i][5], 1);
     Serial.print(",");
-    Serial.print((int)results[i][6]); // L_signal
+    Serial.print((int)results[i][6]);
     Serial.print(",");
-    Serial.print((int)results[i][7]); // R_signal
+    Serial.print((int)results[i][7]);
     Serial.print(",");
-    Serial.print(results[i][8], 1);  // Speed_cmd
+    Serial.print(results[i][8], 1);
     Serial.print(",");
-    Serial.println(results[i][9], 2); // Steer_cmd
+    Serial.println(results[i][9], 2);
   }
-  
-  Serial.println("==========================================");
-  Serial.println("Data Description:");
-  Serial.println("  X_mm, Y_mm: Position (mm)");
-  Serial.println("  Theta_rad: Heading angle (rad)");
-  Serial.println("  SpdL_cps, SpdR_cps: Wheel speed (counts/sec)");
-  Serial.println("  IR_center: Average Bump distance (microseconds)");
-  Serial.println("  L_signal, R_signal: Left/Right Line sensor (after offset)");
-  Serial.println("  Speed_cmd: Speed command from mapping");
-  Serial.println("  Steer_cmd: Steering command");
-  Serial.println("");
-  Serial.print("Total samples: ");
-  Serial.println(results_index);
-  Serial.print("Record interval: ");
-  Serial.print(RECORD_INTERVAL_MS);
-  Serial.println(" ms");
 }

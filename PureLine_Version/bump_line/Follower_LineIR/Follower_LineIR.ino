@@ -1,7 +1,3 @@
-// FOLLOWER_LINE.txt
-// Based on FOLLOWER_BUMP: 3-stage calibration, 200ms timing,
-// bump reads preserved (no print), line window prints L/R/diff.
-
 #include "Encoders.h"
 #include "Motors.h"
 #include "PID.h"
@@ -145,7 +141,6 @@ void loop() {
       unsigned long raw = (rawL + rawR) / 2;
       long diff = (long)bump_base - (long)raw;
       if (diff < 0) diff = 0;
-      // 不打印 bump，保证控制变量只差在输出
     } else {
       line_sensors.readSensorsADC();
       int left_raw = line_sensors.readings[0];

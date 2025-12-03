@@ -1,7 +1,3 @@
-// FOLLOWER_BUMP_ONLY.txt
-// Follower with 3-stage calibration, BTN_PIN=14, non-blocking beep, sync 200ms timing,
-// bump/line baseline kept for control, but runtime output is bump-IR avg only.
-
 #include "Encoders.h"
 #include "Motors.h"
 #include "PID.h"
@@ -61,14 +57,11 @@ void setup() {
 
   pinMode(EMIT_PIN, INPUT);
 
-  // NEVER call line_sensors.initialiseForADC() here (would enable EMIT_PIN)
-
   pinMode(BTN_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
 
   softBeep(40);
 
-  // ---- Button 1: bump baseline ----
   while (digitalRead(BTN_PIN) == HIGH) {
     if (beep_off_time && millis() >= beep_off_time) {
       noTone(BUZZER_PIN);
@@ -87,7 +80,6 @@ void setup() {
     }
   }
 
-  // ---- Button 2: line baseline (control variable only) ----
   while (digitalRead(BTN_PIN) == HIGH) {
     if (beep_off_time && millis() >= beep_off_time) {
       noTone(BUZZER_PIN);
@@ -110,7 +102,6 @@ void setup() {
     }
   }
 
-  // ---- Button 3: enter 200ms timing loop ----
   while (digitalRead(BTN_PIN) == HIGH) {
     if (beep_off_time && millis() >= beep_off_time) {
       noTone(BUZZER_PIN);
@@ -143,13 +134,11 @@ void loop() {
     last_window = bump_window;
 
     if (bump_window) {
-      // BUMP WINDOW: output avg bump IR only
       unsigned long rawL = readBump(BUMP_L);
       unsigned long rawR = readBump(BUMP_R);
       unsigned long raw = (rawL + rawR) / 2;
       Serial.println(raw);
     } else {
-      // LINE WINDOW: keep structure/timing, but no runtime output
     }
   }
 }

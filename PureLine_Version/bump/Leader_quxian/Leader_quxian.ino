@@ -1,70 +1,42 @@
-/*
- * ============================================
- * LEADER ROBOT - Bump Sensor IR方案 + 数据记录
- * ============================================
- * 
- * 功能：
- * 1. 发射Bump Sensor IR (EMIT_PIN = LOW，digital input模式)
- * 2. 按预定路线运动（直线 → 弧线）
- * 3. 记录kinematics数据（x, y, theta）
- * 4. 运动结束后通过串口输出CSV数据
- * 
- * 运动路线：
- * - Stage 0: 等待3秒（让Follower准备）
- * - Stage 1: 直线前进（约30cm）
- * - Stage 2: 弧线运动（半径450mm，左转60度）
- * - Stage 3: 停止，输出数据
- * 
- * 日期: 2025-12-01
- */
-
 #include "Encoders.h"
 #include "Motors.h"
 #include "PID.h"
 #include "Kinematics.h"
 #include "LineSensors.h"
 
-// ========== 引脚定义 ==========
 #define EMIT_PIN    11
 #define BUZZ_PIN    6
-#define BTN_PIN     14     // 按钮引脚
+#define BTN_PIN     14
 
-// ========== 全局对象 ==========
 Motors_c motors;
 Kinematics_c kin;
 PID_c left_pid;
 PID_c right_pid;
 
-// ========== 数据记录 ==========
-// 内存限制：3Pi+只有2560 bytes动态内存！
-// 50 samples × 3 floats × 4 bytes = 600 bytes（安全范围内）
 #define MAX_RESULTS 50
-#define VARIABLES 3  // x, y, theta（不存time，用index计算）
+#define VARIABLES 3
 float results[MAX_RESULTS][VARIABLES];
 int results_index = 0;
 unsigned long record_ts = 0;
-#define RECORD_INTERVAL_MS 150  // 每150ms记录一次（50样本×150ms=7.5秒）
+#define RECORD_INTERVAL_MS 150
 
-// ========== 状态机 ==========
 #define STATE_WAIT        0
 #define STATE_STRAIGHT    1
 #define STATE_ARC         2
 #define STATE_FINISHED    3
 int state = STATE_WAIT;
 
-// ========== 运动参数（学习自Leader.ino）==========
 #define DRIVE_EST_MS    20UL
 #define DRIVE_PID_MS    40UL
-#define DRIVE_PWM_LIMIT 60       // 改：50→60
+#define DRIVE_PWM_LIMIT 60
 
-const float DEMAND_CS = -300.0f; // 改：-250→-300（更快）
-const int kF_L = 16;             // 改：15→16
-const int kF_R = 15;             // 改：14→15
+const float DEMAND_CS = -300.0f;
+const int kF_L = 16;
+const int kF_R = 15;
 
-float KP_L = 0.04025f, KI_L = 0.0f, KD_L = 0.0f;  // 改：KI=0
-float KP_R = 0.07000f, KI_R = 0.0f, KD_R = 0.0f;  // 改：KI=0
+float KP_L = 0.04025f, KI_L = 0.0f, KD_L = 0.0f;
+float KP_R = 0.07000f, KI_R = 0.0f, KD_R = 0.0f;
 
-// ========== 运行时变量 ==========
 unsigned long drive_est_ts = 0, drive_pid_ts = 0;
 long d_last_e0 = 0, d_last_e1 = 0;
 float spdL_cps = 0.0f, spdR_cps = 0.0f;
@@ -73,15 +45,12 @@ float d_mL1 = 0, d_mL2 = 0, d_mR1 = 0, d_mR2 = 0;
 float x0 = 0, y0 = 0, theta0 = 0;
 unsigned long state_start_ts = 0;
 
-// ========== 弧线运动参数（学习自Leader.ino）==========
-#define ARC_RADIUS_MM 450.0f         // 弧线半径450mm
-#define ARC_ANGLE_RAD (M_PI / 3.0f)  // 60度
+#define ARC_RADIUS_MM 450.0f
+#define ARC_ANGLE_RAD (M_PI / 3.0f)
 
-// 轮距补偿（学习自Leader.ino）
-const float SCALE_L = 0.904f;        // 左轮补偿
-const float SCALE_R = 1.00f;         // 右轮补偿
+const float SCALE_L = 0.904f;
+const float SCALE_R = 1.00f;
 
-// ========== 辅助函数 ==========
 static inline float clampf(float v, float lo, float hi) {
   if (v < lo) return lo;
   if (v > hi) return hi;
@@ -98,7 +67,6 @@ static inline float wrapPi(float a) {
   return a;
 }
 
-// 非阻塞蜂鸣器（学习自Leader.ino）
 unsigned long beep_off_time = 0;
 
 void softBeep(int duration_ms) {
@@ -119,40 +87,30 @@ void beep(int duration) {
   analogWrite(BUZZ_PIN, 0);
 }
 
-// ========== 记录数据（精简版，节省内存）==========
 void recordData() {
   if (results_index < MAX_RESULTS) {
-    results[results_index][0] = kin.x;      // X坐标
-    results[results_index][1] = kin.y;      // Y坐标
-    results[results_index][2] = kin.theta;  // 角度
+    results[results_index][0] = kin.x;
+    results[results_index][1] = kin.y;
+    results[results_index][2] = kin.theta;
     results_index++;
   }
 }
 
-// ========== 输出数据（CSV格式）==========
 void printResults() {
-  Serial.println("\n========== LEADER DATA (CSV) ==========");
+  Serial.println("\n===========================DATA================");
   Serial.println("Sample,X_mm,Y_mm,Theta_rad");
   
   for (int i = 0; i < results_index; i++) {
     Serial.print(i);
     Serial.print(",");
-    Serial.print(results[i][0], 2);  // X
+    Serial.print(results[i][0], 2);
     Serial.print(",");
-    Serial.print(results[i][1], 2);  // Y
+    Serial.print(results[i][1], 2);
     Serial.print(",");
-    Serial.println(results[i][2], 4);  // Theta
+    Serial.println(results[i][2], 4);
   }
-  
-  Serial.println("========================================");
-  Serial.print("Total samples: ");
-  Serial.println(results_index);
-  Serial.print("Record interval: ");
-  Serial.print(RECORD_INTERVAL_MS);
-  Serial.println(" ms");
 }
 
-// ========== 速度估计 ==========
 void updateSpeedEstimate() {
   unsigned long now = millis();
   if (now - drive_est_ts >= DRIVE_EST_MS) {
@@ -172,36 +130,30 @@ void updateSpeedEstimate() {
   }
 }
 
-// ========== 弧线PID控制（学习自Leader.ino）==========
 void driveArc() {
   unsigned long now = millis();
   if (now - drive_pid_ts >= DRIVE_PID_MS) {
     drive_pid_ts = now;
     
-    // 弧线运动：内外轮速度不同（学习自Leader.ino）
-    const float wheel_sep_local = 70.0f;  // 轮距
-    float R_L = ARC_RADIUS_MM - wheel_sep_local;  // 内轮
-    float R_R = ARC_RADIUS_MM + wheel_sep_local;  // 外轮
+    const float wheel_sep_local = 70.0f;
+    float R_L = ARC_RADIUS_MM - wheel_sep_local;
+    float R_R = ARC_RADIUS_MM + wheel_sep_local;
     
     float v_center = DEMAND_CS;
     
-    // ★新增：轮距补偿（学习自Leader.ino）★
     float demandL = v_center * (R_L / ARC_RADIUS_MM) * SCALE_L;
     float demandR = v_center * (R_R / ARC_RADIUS_MM) * SCALE_R;
     
-    // 速度滤波（3点滑动平均）
     float measL = (spdL_cps + d_mL1 + d_mL2) / 3.0f;
     float measR = (spdR_cps + d_mR1 + d_mR2) / 3.0f;
     d_mL2 = d_mL1; d_mL1 = spdL_cps;
     d_mR2 = d_mR1; d_mR1 = spdR_cps;
     
-    // PID计算
     float uL = left_pid.update(demandL, measL);
     float uR = right_pid.update(demandR, measR);
-    float uLc = clampf(uL, -12.0f, 12.0f);  // 改：±10→±12
+    float uLc = clampf(uL, -12.0f, 12.0f);
     float uRc = clampf(uR, -12.0f, 12.0f);
     
-    // 前馈 + PID
     float baseL = (demandL >= 0.0f) ? kF_L : -kF_L;
     float baseR = (demandR >= 0.0f) ? kF_R : -kF_R;
     
@@ -212,54 +164,30 @@ void driveArc() {
   }
 }
 
-
-// ============================================
-// SETUP
-// ============================================
 void setup() {
   Serial.begin(115200);
   delay(500);
   
-  Serial.println("\n========================================");
-  Serial.println("  LEADER - Bump Sensor IR Version");
-  Serial.println("  with Data Recording (30deg + Arc)");
-  Serial.println("========================================");
-  
-  // 初始化电机和编码器
   motors.initialise();
   setupEncoder0();
   setupEncoder1();
   delay(300);
   
-  // 初始化运动学（从30度开始，同30度转弯.txt）
-  kin.initialise(0.0f, 0.0f, M_PI/6.0f);  // 改：从30度开始
+  kin.initialise(0.0f, 0.0f, M_PI/6.0f);
   
-  // 初始化PID
   left_pid.initialise(KP_L, KI_L, KD_L);
   right_pid.initialise(KP_R, KI_R, KD_R);
   left_pid.reset();
   right_pid.reset();
   
-  ////////////////
   pinMode(EMIT_PIN, OUTPUT);
   digitalWrite(EMIT_PIN, LOW);
-  ////////////////
-  Serial.println("Bump Sensor IR: ON (EMIT_PIN = LOW, digital input mode)");
   
-  // 蜂鸣器和按钮
   pinMode(BUZZ_PIN, OUTPUT);
   pinMode(BTN_PIN, INPUT_PULLUP);
   
-  Serial.println("\nMotion Plan (same as 30度转弯.txt):");
-  Serial.println("  1. Wait 3s");
-  Serial.println("  2. Arc only (R=450mm, turn 60 deg left)");
-  Serial.println("  3. Stop & output data");
-  Serial.println("  Initial angle: 30 deg (pi/6)");
-  Serial.println("");
-  
   beep(200);
   
-  // 初始化时间戳
   drive_est_ts = drive_pid_ts = record_ts = millis();
   state_start_ts = millis();
   
@@ -267,16 +195,11 @@ void setup() {
   results_index = 0;
 }
 
-// ============================================
-// LOOP
-// ============================================
 void loop() {
   unsigned long now = millis();
   
-  // 始终更新速度估计
   updateSpeedEstimate();
   
-  // 定时记录数据（在运动状态时）
   if (state == STATE_STRAIGHT || state == STATE_ARC) {
     if (now - record_ts >= RECORD_INTERVAL_MS) {
       record_ts = now;
@@ -284,10 +207,8 @@ void loop() {
     }
   }
   
-  // 状态机
   switch (state) {
     
-    // ========== 等待3秒 ==========
     case STATE_WAIT:
       motors.setPWM(0, 0);
       
@@ -299,12 +220,11 @@ void loop() {
         
         x0 = kin.x;
         y0 = kin.y;
-        theta0 = kin.theta;  // 记录起始角度（30度）
+        theta0 = kin.theta;
         
         left_pid.reset();
         right_pid.reset();
         
-        // 直接进入弧线状态（跳过直线，同30度转弯.txt）
         state = STATE_ARC;
         state_start_ts = now;
       } else {
@@ -319,22 +239,19 @@ void loop() {
       }
       break;
     
-    // ========== 弧线运动（角度计算同Leader.ino）==========
     case STATE_ARC:
       {
         driveArc();
         
-        // 角度计算（同Leader.ino）
         float dtheta = wrapPi(kin.theta - theta0);
         
-        // 调试输出
         static unsigned long last_debug_arc = 0;
         if (now - last_debug_arc >= 200) {
           last_debug_arc = now;
           Serial.print("[ARC] dtheta=");
           Serial.print(dtheta * 180.0f / M_PI, 1);
           Serial.print("deg / target=");
-          Serial.print(-60.0f);  // -π/3 = -60度
+          Serial.print(-60.0f);
           Serial.print("deg | Speed L=");
           Serial.print(spdL_cps, 1);
           Serial.print(" R=");
@@ -342,7 +259,6 @@ void loop() {
           Serial.println(" cps");
         }
         
-        // 达到目标角度：转过-60度（-π/3）停止
         if (dtheta <= -M_PI/3.0f) {
           Serial.println("Arc phase complete!");
           beep(200);
@@ -355,20 +271,17 @@ void loop() {
       }
       break;
     
-    // ========== 运动完成，输出数据 ==========
     case STATE_FINISHED:
       motors.setPWM(0, 0);
       
-      // ★★★ 关闭IR让Follower知道结束了 ★★★
-      digitalWrite(EMIT_PIN, HIGH);  // Bump Sensor: HIGH = OFF
+      digitalWrite(EMIT_PIN, HIGH);
       Serial.println("IR OFF - Follower will stop due to signal lost");
       
-      // 输出所有记录的数据
       printResults();
       
       Serial.println("\nMotion finished. Reset to run again.");
       
-      delay(5000);  // 5秒后重新输出
+      delay(5000);
       break;
   }
 }
